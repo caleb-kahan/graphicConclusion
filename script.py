@@ -157,7 +157,7 @@ def run(filename):
             args = command['args']
 
             knob_value = 1
-            if 'knob' in command:
+            if 'knob' in command and command['knob']:
                 knob_value = symbols[command['knob']][1]
 
             if c == 'box':
