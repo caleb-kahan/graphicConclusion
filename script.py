@@ -20,8 +20,29 @@ from draw import *
   ==================== """
 def first_pass( commands ):
 
-    name = ''
+    name = 'snap'
     num_frames = 1
+
+    vary = False
+    baseName = False
+    frames = False
+
+    for command in commands:
+        c = command['op']
+        args = command['args']
+        if c == "vary":
+            vary = True
+        elif c == "basename":
+            baseName = True
+            name = args[0]
+        elif c == "frames":
+            frames = True
+            num_frames = int(args[0])
+    if vary and not frames:
+        print("SYNTAX ERROR: vary is present while frames is not.")
+        return ()
+    if frames and not baseName:
+        print('WARNING: basename not set.\n basename preset to "anim"')
 
     return (name, num_frames)
 
@@ -45,6 +66,30 @@ def first_pass( commands ):
 def second_pass( commands, num_frames ):
     frames = [ {} for i in range(num_frames) ]
 
+    for command in commands:
+        c = command['op']
+        if c == "vary":
+            knob = command['knob']
+            args = command['args']
+
+            start_frame = int(args[0])
+            end_frame = int(args[1])
+            start_val = args[2]
+            end_val = args[3]
+            if not start_frame < end_frame:
+                print("SYNTAX ERROR: start_frame is not before end_frame")
+                return
+            if not end_frame < num_frames:
+                print("SYNTAX ERROR: end_frame occurs after total number of frames")
+                return
+            current_val = start_val
+            change = (end_val - start_val)/(end_frame - start_frame)
+            for i in range(start_frame,end_frame+1):
+                if knob in frames[i]:
+                    print("SYNTAX ERROR: MULTIPLE vary commands for same frame")
+                    return
+                frames[i][knob] = current_val
+                current_val+=change
     return frames
 
 
@@ -80,89 +125,107 @@ def run(filename):
                           'blue': [0.2, 0.5, 0.5]}]
     reflect = '.white'
 
-    (name, num_frames) = first_pass(commands)
+    try:
+        (basename, num_frames) = first_pass(commands)
+    except ValueError:
+        print("MDL compiling failed")
+        return
+
     frames = second_pass(commands, num_frames)
+    if not frames:
+        print("MDL compiling failed")
+        return
 
+    for i in range(num_frames):
 
-    tmp = new_matrix()
-    ident( tmp )
+        for knob in frames[i]:
+            symbols[knob] = ['knob',frames[i][knob]]
 
-    stack = [ [x[:] for x in tmp] ]
-    screen = new_screen()
-    zbuffer = new_zbuffer()
-    tmp = []
-    step_3d = 100
-    consts = ''
-    coords = []
-    coords1 = []
+        tmp = new_matrix()
+        ident( tmp )
+        stack = [ [x[:] for x in tmp] ]
+        screen = new_screen()
+        zbuffer = new_zbuffer()
+        tmp = []
+        step_3d = 100
+        consts = ''
+        coords = []
+        coords1 = []
 
-    for command in commands:
-        print(command)
-        c = command['op']
-        args = command['args']
-        knob_value = 1
+        for command in commands:
+            c = command['op']
+            args = command['args']
 
-        if c == 'box':
-            if command['constants']:
-                reflect = command['constants']
-            add_box(tmp,
-                    args[0], args[1], args[2],
-                    args[3], args[4], args[5])
-            matrix_mult( stack[-1], tmp )
-            draw_polygons(tmp, screen, zbuffer, view, ambient, light, symbols, reflect)
-            tmp = []
-            reflect = '.white'
-        elif c == 'sphere':
-            if command['constants']:
-                reflect = command['constants']
-            add_sphere(tmp,
-                       args[0], args[1], args[2], args[3], step_3d)
-            matrix_mult( stack[-1], tmp )
-            draw_polygons(tmp, screen, zbuffer, view, ambient, light, symbols, reflect)
-            tmp = []
-            reflect = '.white'
-        elif c == 'torus':
-            if command['constants']:
-                reflect = command['constants']
-            add_torus(tmp,
-                      args[0], args[1], args[2], args[3], args[4], step_3d)
-            matrix_mult( stack[-1], tmp )
-            draw_polygons(tmp, screen, zbuffer, view, ambient, light, symbols, reflect)
-            tmp = []
-            reflect = '.white'
-        elif c == 'line':
-            add_edge(tmp,
-                     args[0], args[1], args[2], args[3], args[4], args[5])
-            matrix_mult( stack[-1], tmp )
-            draw_lines(tmp, screen, zbuffer, color)
-            tmp = []
-        elif c == 'move':
-            tmp = make_translate(args[0], args[1], args[2])
-            matrix_mult(stack[-1], tmp)
-            stack[-1] = [x[:] for x in tmp]
-            tmp = []
-        elif c == 'scale':
-            tmp = make_scale(args[0], args[1], args[2])
-            matrix_mult(stack[-1], tmp)
-            stack[-1] = [x[:] for x in tmp]
-            tmp = []
-        elif c == 'rotate':
-            theta = args[1] * (math.pi/180)
-            if args[0] == 'x':
-                tmp = make_rotX(theta)
-            elif args[0] == 'y':
-                tmp = make_rotY(theta)
-            else:
-                tmp = make_rotZ(theta)
-            matrix_mult( stack[-1], tmp )
-            stack[-1] = [ x[:] for x in tmp]
-            tmp = []
-        elif c == 'push':
-            stack.append([x[:] for x in stack[-1]] )
-        elif c == 'pop':
-            stack.pop()
-        elif c == 'display':
-            display(screen)
-        elif c == 'save':
-            save_extension(screen, args[0])
-        # end operation loop
+            knob_value = 1
+            if 'knob' in command:
+                knob_value = symbols[command['knob']][1]
+
+            if c == 'box':
+                if command['constants']:
+                    reflect = command['constants']
+                add_box(tmp,
+                        args[0], args[1], args[2],
+                        args[3], args[4], args[5])
+                matrix_mult( stack[-1], tmp )
+                draw_polygons(tmp, screen, zbuffer, view, ambient, light, symbols, reflect)
+                tmp = []
+                reflect = '.white'
+            elif c == 'sphere':
+                if command['constants']:
+                    reflect = command['constants']
+                add_sphere(tmp,
+                           args[0], args[1], args[2], args[3], step_3d)
+                matrix_mult( stack[-1], tmp )
+                draw_polygons(tmp, screen, zbuffer, view, ambient, light, symbols, reflect)
+                tmp = []
+                reflect = '.white'
+            elif c == 'torus':
+                if command['constants']:
+                    reflect = command['constants']
+                add_torus(tmp,
+                          args[0], args[1], args[2], args[3], args[4], step_3d)
+                matrix_mult( stack[-1], tmp )
+                draw_polygons(tmp, screen, zbuffer, view, ambient, light, symbols, reflect)
+                tmp = []
+                reflect = '.white'
+            elif c == 'line':
+                add_edge(tmp,
+                         args[0], args[1], args[2], args[3], args[4], args[5])
+                matrix_mult( stack[-1], tmp )
+                draw_lines(tmp, screen, zbuffer, color)
+                tmp = []
+            elif c == 'move':
+                tmp = make_translate(args[0]*knob_value, args[1]*knob_value, args[2]*knob_value)
+                matrix_mult(stack[-1], tmp)
+                stack[-1] = [x[:] for x in tmp]
+                tmp = []
+            elif c == 'scale':
+                tmp = make_scale(args[0]*knob_value, args[1]*knob_value, args[2]*knob_value)
+                matrix_mult(stack[-1], tmp)
+                stack[-1] = [x[:] for x in tmp]
+                tmp = []
+            elif c == 'rotate':
+                theta = args[1] * (math.pi/180) * knob_value
+                if args[0] == 'x':
+                    tmp = make_rotX(theta)
+                elif args[0] == 'y':
+                    tmp = make_rotY(theta)
+                else:
+                    tmp = make_rotZ(theta)
+                matrix_mult( stack[-1], tmp )
+                stack[-1] = [ x[:] for x in tmp]
+                tmp = []
+            elif c == 'push':
+                stack.append([x[:] for x in stack[-1]] )
+            elif c == 'pop':
+                stack.pop()
+            elif c == 'display':
+                if num_frames == 1:
+                    display(screen)
+            elif c == 'save':
+                if num_frames == 1:
+                    save_extension(screen, args[0])
+            # end operation loop
+        name = "anim/" + basename + (str(i)).rjust(3,'0')
+        save_extension(screen,name)
+    make_animation(basename)

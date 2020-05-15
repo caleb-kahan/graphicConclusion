@@ -26,6 +26,8 @@
 *.gch
 *.pch
 
+.ftpconfig
+
 # Libraries
 *.lib
 *.a
